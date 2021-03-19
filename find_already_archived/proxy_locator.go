@@ -73,7 +73,7 @@ func proxyLocator(s3Client *s3.Client, proxybucket string, inputCh chan *models.
 		}
 
 		if response.KeyCount != 0 {
-			log.Printf("DEBUG proxyLocator found %d proxies for %s", response.KeyCount, rec.RequestedFile)
+			//log.Printf("DEBUG proxyLocator found %d proxies for %s", response.KeyCount, rec.RequestedFile)
 			rec.Proxies = proxyListFromResponse(response, proxybucket)
 		}
 		outputCh <- rec
