@@ -14,6 +14,7 @@ func main() {
 	bucketPtr := flag.String("bucket", "holding-pen", "Bucket name that contains the original media files")
 	desiredThreadsPtr := flag.Int("threads", 4, "Number of concurrent deletion operations to run")
 	reallyDeletePtr := flag.Bool("really-delete", false, "Only attempt to delete files if this option is set")
+	noCopyPtr := flag.Bool("no-copy", false, "don't try to download the files first")
 	flag.Parse()
 
 	s3config, confErr := awsconfig.LoadDefaultConfig(context.Background())
@@ -25,7 +26,16 @@ func main() {
 
 	inputCh, inputErrCh := models.AsyncCsvReader(*inputFilePtr)
 	entriesCh, entryErrCh := AsyncEntryFanout(inputCh, *bucketPtr)
-	deleteErrCh := AsyncEntryDeleter(s3client, entriesCh, *desiredThreadsPtr, *reallyDeletePtr)
+	var downloadedCh chan *models.FoundEntry
+	var downloadErrCh chan error
+	if *noCopyPtr {
+		downloadedCh = entriesCh
+		downloadErrCh = make(chan error, 1)
+	} else {
+		downloadedCh, downloadErrCh = AsyncItemFetcher(s3client, entriesCh, *desiredThreadsPtr)
+	}
+
+	deleteErrCh := AsyncEntryDeleter(s3client, downloadedCh, 1, *reallyDeletePtr)
 
 	func() {
 		for {
@@ -35,6 +45,9 @@ func main() {
 				return
 			case err := <-entryErrCh:
 				log.Print("ERROR main received error from fanout: ", err)
+				return
+			case err := <-downloadErrCh:
+				log.Print("ERROR main received error from download: ", err)
 				return
 			case err := <-deleteErrCh:
 				if err == nil {

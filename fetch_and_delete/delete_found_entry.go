@@ -6,6 +6,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/guardian/multimedia-holding-pen-utils/models"
 	"log"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 )
@@ -33,16 +35,27 @@ func deleterThread(s3Client *s3.Client, inputCh chan *models.FoundEntry,
 			return
 		}
 
-		//decodedPath, decodeErr := url.QueryUnescape(entry.Path)
-		//if decodeErr!=nil {
-		//	log.Printf("WARNING deleterThread could not unescape incoming path '%s': %s", entry.Path, decodeErr)
-		//	continue
-		//}
-		log.Printf("INFO deleterThread request to delete %s on %s", entry.Path, entry.Bucket)
+		if entry.Bucket == "" || entry.Path == "" {
+			continue
+		}
+		keyToUse := entry.Path
+		if strings.HasPrefix(keyToUse, "/") {
+			keyToUse = keyToUse[1:]
+		}
+
+		if strings.Contains(keyToUse, "%2F") {
+			decodedPath, decodeErr := url.QueryUnescape(entry.Path)
+			if decodeErr != nil {
+				log.Printf("WARNING deleterThread could not unescape incoming path '%s': %s", entry.Path, decodeErr)
+				continue
+			}
+			keyToUse = decodedPath
+		}
+		log.Printf("INFO deleterThread request to delete %s on %s", keyToUse, entry.Bucket)
 		if reallyDelete {
-			_, deleteErr := requestDelete(s3Client, entry.Bucket, entry.Path, 3*time.Second)
+			_, deleteErr := requestDelete(s3Client, entry.Bucket, keyToUse, 3*time.Second)
 			if deleteErr != nil {
-				log.Printf("ERROR deleteThread could not delete %s:%s - %s", entry.Bucket, entry.Path, deleteErr)
+				log.Printf("ERROR deleteThread could not delete %s:%s - %s", entry.Bucket, keyToUse, deleteErr)
 				errCh <- deleteErr
 				return
 			}
