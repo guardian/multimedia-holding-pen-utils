@@ -20,6 +20,7 @@ func main() {
 	excludeBucketsPtr := flag.String("exclude", "", "comma-separated list of buckets to exclude")
 	desiredThreadsPtr := flag.Int("threads", 4, "number of concurrent lookups to perform")
 	proxyBucketPtr := flag.String("proxy", "proxies", "name of bucket to look for proxies in")
+	outputFilePtr := flag.String("out", "holding-pen.csv", "CSV report to write")
 	flag.Parse()
 
 	s3config, confErr := awsconfig.LoadDefaultConfig(context.Background())
@@ -55,6 +56,7 @@ func main() {
 	s3ObjectCh, errCh := AsyncReadBucket(s3Client, *targetBucketPtr, timeout)
 	lookedUpCh, lookupErrCh := AsyncIndexLookup(esClient, *indexNamePtr, *targetBucketPtr, *desiredThreadsPtr, &excludeBuckets, s3ObjectCh)
 	proxyLocatedCh, locatorErrCh := AsyncLocateProxy(s3Client, lookedUpCh, *proxyBucketPtr, 10)
+	writerErrCh := AsyncOutputWriter(*outputFilePtr, true, proxyLocatedCh)
 
 	var totalSize int64 = 0
 	var fileCount int64 = 0
@@ -63,32 +65,40 @@ func main() {
 	func() {
 		for {
 			select {
-			case file := <-proxyLocatedCh:
-				if file == nil {
-					log.Print("INFO main All done")
+			//case file := <-proxyLocatedCh:
+			//	if file == nil {
+			//		log.Print("INFO main All done")
+			//		return
+			//	}
+			//
+			//	//decodedFileName, decodeErr := url.QueryUnescape(*file.Key)
+			//	//if decodeErr != nil {
+			//	//	log.Printf("ERROR could not decode filename '%s': %s", *file.Key, decodeErr)
+			//	//} else {
+			//	//	log.Printf("Got %s in class %s, with size %d", decodedFileName, file.StorageClass, file.Size)
+			//	//}
+			//	//totalSize += file.Size
+			//	bucketsList := make([]string, len(file.Entries))
+			//	for i, e := range file.Entries {
+			//		bucketsList[i] = e.Bucket
+			//	}
+			//
+			//	bucketsListStr := "(" + strings.Join(bucketsList, ",") + ")"
+			//	log.Printf("INFO %s has %d results in %s and %d proxies", file.RequestedFile, file.Count, bucketsListStr, len(file.Proxies))
+			//	totalSize += file.RequestedFileSize
+			//	fileCount++
+			//
+			//	if file.Count > 0 {
+			//		matchedFiles++
+			//		matchedSize += file.RequestedFileSize
+			//	}
+			case err := <-writerErrCh:
+				if err == nil {
+					log.Print("INFO writer reached end of stream, exiting")
 					return
-				}
-
-				//decodedFileName, decodeErr := url.QueryUnescape(*file.Key)
-				//if decodeErr != nil {
-				//	log.Printf("ERROR could not decode filename '%s': %s", *file.Key, decodeErr)
-				//} else {
-				//	log.Printf("Got %s in class %s, with size %d", decodedFileName, file.StorageClass, file.Size)
-				//}
-				//totalSize += file.Size
-				bucketsList := make([]string, len(file.Entries))
-				for i, e := range file.Entries {
-					bucketsList[i] = e.Bucket
-				}
-
-				bucketsListStr := "(" + strings.Join(bucketsList, ",") + ")"
-				log.Printf("INFO %s has %d results in %s and %d proxies", file.RequestedFile, file.Count, bucketsListStr, len(file.Proxies))
-				totalSize += file.RequestedFileSize
-				fileCount++
-
-				if file.Count > 0 {
-					matchedFiles++
-					matchedSize += file.RequestedFileSize
+				} else {
+					log.Print("ERROR main got error from writer: ", err)
+					return
 				}
 			case err := <-errCh:
 				log.Print("ERROR main got error from AsyncReadBucket: ", err)

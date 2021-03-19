@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/guardian/multimedia-holding-pen-utils/models"
 	"log"
 	"regexp"
 	"sync"
@@ -26,7 +27,7 @@ func prefixFromFilename(filename string) (string, bool) {
 /**
 make a list request to the given bucket name with a timeout
 */
-func makeSearchRequest(s3Client *s3.Client, proxybucket string, rec *LookupResult, timeout time.Duration) (*s3.ListObjectsV2Output, error) {
+func makeSearchRequest(s3Client *s3.Client, proxybucket string, rec *models.LookupResult, timeout time.Duration) (*s3.ListObjectsV2Output, error) {
 	prefix, gotPrefix := prefixFromFilename(rec.RequestedFile)
 	if !gotPrefix {
 		log.Printf("WARNING ProxyLocator.makeSearchRequest - could not get prefix from '%s'", rec.RequestedFile)
@@ -44,10 +45,10 @@ func makeSearchRequest(s3Client *s3.Client, proxybucket string, rec *LookupResul
 }
 
 /**
-makes a list of []FoundEntry from the given S3 response
+makes a list of []models.FoundEntry from the given S3 response
 */
-func proxyListFromResponse(response *s3.ListObjectsV2Output, bucketName string) []FoundEntry {
-	entries := make([]FoundEntry, len(response.Contents))
+func proxyListFromResponse(response *s3.ListObjectsV2Output, bucketName string) []models.FoundEntry {
+	entries := make([]models.FoundEntry, len(response.Contents))
 
 	for i, obj := range response.Contents {
 		entries[i].Path = *obj.Key
@@ -57,7 +58,8 @@ func proxyListFromResponse(response *s3.ListObjectsV2Output, bucketName string) 
 	return entries
 }
 
-func proxyLocator(s3Client *s3.Client, proxybucket string, inputCh chan *LookupResult, outputCh chan *LookupResult, errCh chan error) {
+func proxyLocator(s3Client *s3.Client, proxybucket string, inputCh chan *models.LookupResult, outputCh chan *models.LookupResult, errCh chan error, waitGroup *sync.WaitGroup) {
+	defer waitGroup.Done()
 	for {
 		rec := <-inputCh
 		if rec == nil {
@@ -78,10 +80,10 @@ func proxyLocator(s3Client *s3.Client, proxybucket string, inputCh chan *LookupR
 	}
 }
 
-func AsyncLocateProxy(s3Client *s3.Client, inputCh chan *LookupResult, proxybucket string, threads int) (chan *LookupResult, chan error) {
-	outputCh := make(chan *LookupResult, 100)
+func AsyncLocateProxy(s3Client *s3.Client, inputCh chan *models.LookupResult, proxybucket string, threads int) (chan *models.LookupResult, chan error) {
+	outputCh := make(chan *models.LookupResult, 100)
 	errCh := make(chan error, 1)
-	modifiedInputCh := make(chan *LookupResult, 100)
+	modifiedInputCh := make(chan *models.LookupResult, 100)
 	waitGroup := &sync.WaitGroup{}
 
 	/**
@@ -107,7 +109,8 @@ func AsyncLocateProxy(s3Client *s3.Client, inputCh chan *LookupResult, proxybuck
 	}()
 
 	for i := 0; i < threads; i++ {
-		go proxyLocator(s3Client, proxybucket, modifiedInputCh, outputCh, errCh)
+		go proxyLocator(s3Client, proxybucket, modifiedInputCh, outputCh, errCh, waitGroup)
+		waitGroup.Add(1)
 	}
 	return outputCh, errCh
 }

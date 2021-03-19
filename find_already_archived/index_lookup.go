@@ -11,20 +11,6 @@ import (
 	"sync"
 )
 
-type FoundEntry struct {
-	Bucket string
-	Path   string
-	Size   int64
-}
-
-type LookupResult struct {
-	RequestedFile     string
-	RequestedFileSize int64
-	Count             int64
-	Entries           []FoundEntry
-	Proxies           []FoundEntry
-}
-
 /**
 builds a query looking for the file path in all other buckets
 */
@@ -50,7 +36,7 @@ func lookupProcessor(esClient *elastic.Client,
 	targetBucket string,
 	excludeBucketsPtr *[]string,
 	inputCh chan *awstypes.Object,
-	outputCh chan *LookupResult,
+	outputCh chan *models.LookupResult,
 	errCh chan error,
 	waitGroup *sync.WaitGroup) {
 
@@ -81,7 +67,7 @@ func lookupProcessor(esClient *elastic.Client,
 			return
 		}
 
-		entryList := make([]FoundEntry, len(response.Hits.Hits))
+		entryList := make([]models.FoundEntry, len(response.Hits.Hits))
 
 		for i, hit := range response.Hits.Hits {
 			var archiveEntry models.ArchiveEntry
@@ -95,7 +81,7 @@ func lookupProcessor(esClient *elastic.Client,
 			}
 		}
 
-		result := &LookupResult{
+		result := &models.LookupResult{
 			RequestedFile:     decodedFilename,
 			RequestedFileSize: rec.Size,
 			Count:             response.TotalHits(),
@@ -110,9 +96,9 @@ func AsyncIndexLookup(esClient *elastic.Client,
 	targetBucket string,
 	threads int,
 	excludeBucketsPtr *[]string,
-	inputCh chan *awstypes.Object) (chan *LookupResult, chan error) {
+	inputCh chan *awstypes.Object) (chan *models.LookupResult, chan error) {
 
-	outputCh := make(chan *LookupResult, 10)
+	outputCh := make(chan *models.LookupResult, 10)
 	errCh := make(chan error, 1)
 	internalErrCh := make(chan error, 1)
 	waitGroup := &sync.WaitGroup{}
