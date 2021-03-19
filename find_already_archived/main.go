@@ -19,6 +19,7 @@ func main() {
 	timeoutStringPtr := flag.String("timeout", "30s", "default network timeout")
 	excludeBucketsPtr := flag.String("exclude", "", "comma-separated list of buckets to exclude")
 	desiredThreadsPtr := flag.Int("threads", 4, "number of concurrent lookups to perform")
+	proxyBucketPtr := flag.String("proxy", "proxies", "name of bucket to look for proxies in")
 	flag.Parse()
 
 	s3config, confErr := awsconfig.LoadDefaultConfig(context.Background())
@@ -53,6 +54,7 @@ func main() {
 
 	s3ObjectCh, errCh := AsyncReadBucket(s3Client, *targetBucketPtr, timeout)
 	lookedUpCh, lookupErrCh := AsyncIndexLookup(esClient, *indexNamePtr, *targetBucketPtr, *desiredThreadsPtr, &excludeBuckets, s3ObjectCh)
+	proxyLocatedCh, locatorErrCh := AsyncLocateProxy(s3Client, lookedUpCh, *proxyBucketPtr, 10)
 
 	var totalSize int64 = 0
 	var fileCount int64 = 0
@@ -61,7 +63,7 @@ func main() {
 	func() {
 		for {
 			select {
-			case file := <-lookedUpCh:
+			case file := <-proxyLocatedCh:
 				if file == nil {
 					log.Print("INFO main All done")
 					return
@@ -80,7 +82,7 @@ func main() {
 				}
 
 				bucketsListStr := "(" + strings.Join(bucketsList, ",") + ")"
-				log.Printf("INFO %s has %d results in %s", file.RequestedFile, file.Count, bucketsListStr)
+				log.Printf("INFO %s has %d results in %s and %d proxies", file.RequestedFile, file.Count, bucketsListStr, len(file.Proxies))
 				totalSize += file.RequestedFileSize
 				fileCount++
 
@@ -94,6 +96,8 @@ func main() {
 			case err := <-lookupErrCh:
 				log.Print("ERROR main got error from AsyncIndexLookup: ", err)
 				return
+			case err := <-locatorErrCh:
+				log.Print("WARNING main got error from AsyncProxyLookup: ", err)
 			}
 		}
 	}()

@@ -22,6 +22,7 @@ type LookupResult struct {
 	RequestedFileSize int64
 	Count             int64
 	Entries           []FoundEntry
+	Proxies           []FoundEntry
 }
 
 /**
