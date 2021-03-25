@@ -28,6 +28,9 @@ func AsyncEntryFanout(inputCh chan *models.LookupResult, rootBucket string) (cha
 				Size:   rec.RequestedFileSize,
 			}
 			outputCh <- &rootEntry
+			if len(rec.Proxies) > 3 {
+				log.Printf("WARNING AsyncEntryFanout %s has %d proxies which is suspiciously large, ignoring them", rec.RequestedFile, len(rec.Proxies))
+			}
 			for _, prox := range rec.Proxies {
 				copiedEntry := prox
 				outputCh <- &copiedEntry //never directly take the address of an iterator!

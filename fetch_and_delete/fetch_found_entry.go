@@ -15,7 +15,6 @@ import (
 	"path"
 	"strings"
 	"sync"
-	"time"
 )
 
 /**
@@ -54,8 +53,7 @@ func performDownload(s3Client *s3.Client, bucket string, key string, toFile stri
 		Key:    aws.String(key),
 	}
 
-	ctx, cancelFunc := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancelFunc()
+	ctx := context.Background()
 
 	response, err := s3Client.GetObject(ctx, &req)
 	if err != nil {
@@ -73,7 +71,8 @@ func performDownload(s3Client *s3.Client, bucket string, key string, toFile stri
 		return localLength, nil
 	} else if doesExist {
 		log.Printf("ERROR performDownload local file %s exists with size %d but remote has size %d", toFile, localLength, response.ContentLength)
-		return 0, errors.New("another file exists already")
+		//return 0, errors.New(fmt.Sprintf("'%s' - another file exists already", toFile))
+		return performDownload(s3Client, bucket, key, toFile+"-new")
 	}
 
 	dirErr := createLocalDir(toFile)
